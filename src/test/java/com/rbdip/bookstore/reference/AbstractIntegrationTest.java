@@ -1,5 +1,6 @@
 package com.rbdip.bookstore.reference;
 
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -47,6 +48,14 @@ public abstract class AbstractIntegrationTest {
 
     @BeforeEach
     void cleanDatabase() {
-        jdbcTemplate.execute("TRUNCATE TABLE reviews, order_items, orders, products RESTART IDENTITY CASCADE");
+        // Очищаются все таблицы приложения, включая созданные миграциями
+        // студента (например, customers после ЛР2).
+        List<String> tables = jdbcTemplate.queryForList(
+                "SELECT quote_ident(tablename) FROM pg_tables"
+                        + " WHERE schemaname = 'public' AND tablename <> 'flyway_schema_history'",
+                String.class);
+        if (!tables.isEmpty()) {
+            jdbcTemplate.execute("TRUNCATE TABLE " + String.join(", ", tables) + " RESTART IDENTITY CASCADE");
+        }
     }
 }

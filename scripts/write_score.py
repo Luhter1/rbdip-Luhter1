@@ -17,6 +17,12 @@ TARGET = ROOT / "target"
 STYLE_VIOLATIONS_THRESHOLD = 15
 JACOCO_LINE_COVERAGE_MIN = 0.60
 PIT_MUTATION_SCORE_MIN = 60.0
+DETECTED_STATUSES = {"KILLED", "TIMED_OUT", "MEMORY_ERROR", "RUN_ERROR"}
+
+BEHAVIOUR_REFERENCE_TESTS = (
+    "com.rbdip.bookstore.reference.OrderApiReferenceTest",
+    "com.rbdip.bookstore.reference.PricingCalculatorReferenceTest",
+)
 
 
 def count_checkstyle_violations():
@@ -85,16 +91,25 @@ def pit_mutation_score():
         mutations = root.findall("mutation")
         if not mutations:
             return None
-        killed = sum(1 for m in mutations if m.get("status") == "KILLED")
-        return 100.0 * killed / len(mutations)
+        # Те же статусы, что PIT сам считает "обнаруженными" в своём отчёте.
+        detected = sum(1 for m in mutations if m.get("status") in DETECTED_STATUSES)
+        return 100.0 * detected / len(mutations)
     except ET.ParseError:
         return None
 
 
 def main():
-    checkstyle_violations = count_checkstyle_violations() or 0
-    pmd_violations = count_pmd_violations() or 0
-    style_ok = (checkstyle_violations + pmd_violations) <= STYLE_VIOLATIONS_THRESHOLD
+    checkstyle_violations = count_checkstyle_violations()
+    pmd_violations = count_pmd_violations()
+    behaviour_preserved = all(surefire_test_passed(t) for t in BEHAVIOUR_REFERENCE_TESTS)
+    # Нет отчёта (например, код не скомпилировался) - гейт не пройден,
+    # а не "0 замечаний".
+    style_ok = (
+        checkstyle_violations is not None
+        and pmd_violations is not None
+        and checkstyle_violations + pmd_violations <= STYLE_VIOLATIONS_THRESHOLD
+        and behaviour_preserved
+    )
 
     coverage = jacoco_line_coverage()
     coverage_ok = coverage is not None and coverage >= JACOCO_LINE_COVERAGE_MIN
@@ -106,7 +121,10 @@ def main():
         "lab1_style": {
             "passed": style_ok,
             "weight": 15,
-            "detail": f"checkstyle={checkstyle_violations}, pmd={pmd_violations}",
+            "detail": (
+                f"checkstyle={checkstyle_violations}, pmd={pmd_violations}, "
+                f"reference_tests={'ok' if behaviour_preserved else 'fail'}"
+            ),
         },
         "lab2_coverage": {
             "passed": coverage_ok,
@@ -141,10 +159,7 @@ def main():
             "detail": f"mutation_score={mutation_score}",
         },
         "lab5_reference": {
-            "passed": (
-                surefire_test_passed("com.rbdip.bookstore.reference.OrderApiReferenceTest")
-                and surefire_test_passed("com.rbdip.bookstore.reference.PricingCalculatorReferenceTest")
-            ),
+            "passed": behaviour_preserved,
             "weight": 15,
         },
     }

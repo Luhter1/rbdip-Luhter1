@@ -7,8 +7,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Гейт ЛР2: после нормализации схемы должна появиться отдельная таблица
- * customers, а orders/order_items - ссылаться на неё и на products по
- * внешнему ключу вместо дублирования данных. На старте (до того как
+ * customers (имя клиента - в колонке full_name), а orders/order_items -
+ * ссылаться на неё и на products по внешнему ключу вместо дублирования
+ * данных. На старте (до того как
  * студент добавит свои Flyway-миграции V2/V3...) тест КРАСНЫЙ - это
  * ожидаемо и документирует задание, а не баг стартового проекта.
  */
@@ -23,6 +24,17 @@ class SchemaNormalizationReferenceTest extends AbstractIntegrationTest {
         assertThat(tables)
                 .as("Ожидается отдельная таблица customers после нормализации схемы (ЛР2)")
                 .contains("customers");
+
+        List<String> customerColumns = jdbcTemplate.queryForList(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'customers'",
+                String.class);
+
+        // full_name - результат ЛР2; first_name/last_name - результат ЛР3
+        // (expand-contract над той же колонкой). Гейт ЛР2 принимает оба состояния.
+        assertThat(customerColumns.contains("full_name")
+                        || customerColumns.containsAll(List.of("first_name", "last_name")))
+                .as("customers должен хранить имя клиента: full_name (после ЛР2) или first_name/last_name (после ЛР3)")
+                .isTrue();
 
         List<String> orderColumns = jdbcTemplate.queryForList(
                 "SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'",
