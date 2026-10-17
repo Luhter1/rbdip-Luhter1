@@ -3,6 +3,7 @@ package com.rbdip.bookstore.order;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Модуль расчёта цены заказа. Намеренно почти не покрыт тестами и
@@ -58,5 +59,22 @@ public class PricingCalculator {
         }
 
         return total.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal calculateTotal(
+            List<OrderLine> lines,
+            String customerType,
+            String couponCode) {
+
+        List<PricingCalculator.LineItem> lineItems = lines.stream()
+                .map(line -> new PricingCalculator.LineItem(
+                        line.product().getPrice(),
+                        line.quantity()))
+                .collect(Collectors.toList());
+
+        return calculateOrderTotal(
+                lineItems,
+                customerType == null ? "regular" : customerType,
+                couponCode);
     }
 }

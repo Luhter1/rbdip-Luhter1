@@ -15,22 +15,25 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
 
-    private final ProductRepository productRepository;
-    private final OrderRepository orderRepository;
-    private final OrderItemRepository orderItemRepository;
+    private final OrderLineAssembler orderLineAssembler;
+    private final OrderPersistenceService orderPersistenceService;
     private final PricingCalculator pricingCalculator = new PricingCalculator();
+    private final OrderNotificationService orderNotificationService = new OrderNotificationService();
 
     public OrderService(
             ProductRepository productRepository,
             OrderRepository orderRepository,
             OrderItemRepository orderItemRepository) {
-        this.productRepository = productRepository;
-        this.orderRepository = orderRepository;
-        this.orderItemRepository = orderItemRepository;
+        this.orderLineAssembler = new OrderLineAssembler(productRepository);
+        this.orderPersistenceService = new OrderPersistenceService(
+                orderRepository, 
+                orderItemRepository);
     }
 
-    @Transactional
-    public Order createOrder(CreateOrderRequest request) {
+    public void validate(CreateOrderRequest request) {
+        if (request == null) {
+            throw new IllegalArgumentException("request is required");
+        }
         if (request.customerFullName() == null || request.customerFullName().isBlank()) {
             throw new IllegalArgumentException("customerFullName is required");
         }
@@ -41,41 +44,34 @@ public class OrderService {
             throw new IllegalArgumentException("order must contain at least one item");
         }
 
-        List<Product> products = new ArrayList<>();
-        List<PricingCalculator.LineItem> lineItems = new ArrayList<>();
-        for (CreateOrderRequest.Item raw : request.items()) {
-            Product product = productRepository.findById(raw.productId())
-                    .orElseThrow(() -> new IllegalArgumentException("product " + raw.productId() + " not found"));
-            int quantity = raw.quantity() == null ? 1 : raw.quantity();
-            if (quantity <= 0) {
+        for (CreateOrderRequest.Item item : request.items()) {
+            if (item == null || item.productId() == null) {
+                throw new IllegalArgumentException("productId is required");
+            }
+            if (item.quantity() != null && item.quantity() <= 0) {
                 throw new IllegalArgumentException("quantity must be positive");
             }
-            products.add(product);
-            lineItems.add(new PricingCalculator.LineItem(product.getPrice(), quantity));
         }
-
-        BigDecimal total = pricingCalculator.calculateOrderTotal(
-                lineItems, request.customerType() == null ? "regular" : request.customerType(), request.couponCode());
-
-        Order order = new Order(
-                request.customerFullName(), request.customerAddress(), request.customerPhone(), "new");
-        order = orderRepository.save(order);
-
-        for (int i = 0; i < products.size(); i++) {
-            Product product = products.get(i);
-            int quantity = lineItems.get(i).quantity();
-            orderItemRepository.save(new OrderItem(order.getId(), product.getName(), product.getPrice(), quantity));
-        }
-
-        sendConfirmationEmail(request.customerFullName(), order.getId(), total);
-
-        return order;
     }
 
-    private void sendConfirmationEmail(String customerName, Long orderId, BigDecimal total) {
-        // Реальный почтовый транспорт не настроен в учебном проекте - здесь
-        // просто эмулируется побочный эффект отправки письма.
-        System.out.printf(
-                "[email] Dear %s, your order #%d for %s has been placed.%n", customerName, orderId, total);
+    @Transactional
+    public Order createOrder(CreateOrderRequest request) {
+        validate(request);
+
+        List<OrderLine> lines = orderLineAssembler.assemble(request);
+
+        BigDecimal total = pricingCalculator.calculateTotal(
+                lines,
+                request.customerType(),
+                request.couponCode());
+
+        Order order = orderPersistenceService.saveOrder(request, lines);
+
+        orderNotificationService.sendConfirmationEmail(
+                request.customerFullName(), 
+                order.getId(), 
+                total);
+
+        return order;
     }
 }
