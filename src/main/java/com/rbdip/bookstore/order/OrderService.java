@@ -23,11 +23,13 @@ public class OrderService {
     public OrderService(
             ProductRepository productRepository,
             OrderRepository orderRepository,
-            OrderItemRepository orderItemRepository) {
+            OrderItemRepository orderItemRepository,
+            CustomerRepository customerRepository) {
         this.orderLineAssembler = new OrderLineAssembler(productRepository);
         this.orderPersistenceService = new OrderPersistenceService(
-                orderRepository, 
-                orderItemRepository);
+                orderRepository,
+                orderItemRepository,
+                customerRepository);
     }
 
     public void validate(CreateOrderRequest request) {
